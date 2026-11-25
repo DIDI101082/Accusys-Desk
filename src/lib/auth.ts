@@ -2,7 +2,6 @@ import { NextAuthOptions } from "next-auth";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createClient } from "@supabase/supabase-js";
-import { supabaseAdmin } from "./supabase";
 
 const providers: any[] = [];
 
@@ -34,12 +33,14 @@ providers.push(
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const supabaseKey =
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
         process.env.SUPABASE_ANON_KEY ||
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !supabaseKey) {
-        console.error("Supabase config missing:", { supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey });
+        console.error("Supabase config missing:", {
+          url: !!supabaseUrl,
+          key: !!supabaseKey,
+        });
         return null;
       }
 
@@ -55,34 +56,12 @@ providers.push(
         return null;
       }
 
-      // Buscar datos adicionales del usuario en la tabla usuarios
-      try {
-        const { data: userData } = await supabaseAdmin
-          .from("usuarios")
-          .select("nombre_display, rol, activo")
-          .eq("email", data.user.email)
-          .single();
-
-        if (userData && !userData.activo) {
-          console.error("Usuario inactivo:", data.user.email);
-          return null;
-        }
-
-        return {
-          id: data.user.id,
-          email: data.user.email!,
-          name: userData?.nombre_display || data.user.user_metadata?.nombre_display || data.user.email!,
-          image: null,
-        };
-      } catch {
-        // Si no hay fila en usuarios, igual permitir el login
-        return {
-          id: data.user.id,
-          email: data.user.email!,
-          name: data.user.user_metadata?.nombre_display || data.user.email!,
-          image: null,
-        };
-      }
+      return {
+        id: data.user.id,
+        email: data.user.email!,
+        name: data.user.user_metadata?.nombre_display || data.user.email!,
+        image: null,
+      };
     },
   })
 );
@@ -93,7 +72,7 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.email = user.email;
