@@ -32,10 +32,18 @@ providers.push(
     async authorize(credentials) {
       if (!credentials?.email || !credentials?.password) return null;
 
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey =
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_ANON_KEY ||
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+      if (!supabaseUrl || !supabaseKey) {
+        console.error("Supabase config missing:", { supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey });
+        return null;
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseKey);
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: credentials.email,
@@ -48,23 +56,33 @@ providers.push(
       }
 
       // Buscar datos adicionales del usuario en la tabla usuarios
-      const { data: userData } = await supabaseAdmin
-        .from("usuarios")
-        .select("nombre_display, rol, activo")
-        .eq("email", data.user.email)
-        .single();
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("usuarios")
+          .select("nombre_display, rol, activo")
+          .eq("email", data.user.email)
+          .single();
 
-      if (userData && !userData.activo) {
-        console.error("Usuario inactivo:", data.user.email);
-        return null;
+        if (userData && !userData.activo) {
+          console.error("Usuario inactivo:", data.user.email);
+          return null;
+        }
+
+        return {
+          id: data.user.id,
+          email: data.user.email!,
+          name: userData?.nombre_display || data.user.user_metadata?.nombre_display || data.user.email!,
+          image: null,
+        };
+      } catch {
+        // Si no hay fila en usuarios, igual permitir el login
+        return {
+          id: data.user.id,
+          email: data.user.email!,
+          name: data.user.user_metadata?.nombre_display || data.user.email!,
+          image: null,
+        };
       }
-
-      return {
-        id: data.user.id,
-        email: data.user.email!,
-        name: userData?.nombre_display || data.user.user_metadata?.nombre_display || data.user.email!,
-        image: null,
-      };
     },
   })
 );
@@ -80,9 +98,6 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.email = user.email;
         token.name = user.name;
-      }
-      if (account?.provider === "azure-ad") {
-        token.provider = "azure-ad";
       }
       return token;
     },
